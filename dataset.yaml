@@ -1,0 +1,5 @@
+train: D:/WorkSpace/python/YOLO_HAND_DETECT/hand/train/images
+val: D:/WorkSpace/python/YOLO_HAND_DETECT/hand/test/images
+
+nc: 1
+names: ["hand"]
