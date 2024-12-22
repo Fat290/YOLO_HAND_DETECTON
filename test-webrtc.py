@@ -8,10 +8,10 @@ from tensorflow.keras.metrics import CosineSimilarity
 import os
 
 MODEL_PATH = r'Color_model\color-embeded-acc.h5'
-
-if "model" not in st.session_state:
-    st.session_state["model"] = load_model(MODEL_PATH)
-model =  st.session_state["model"]
+model = load_model(MODEL_PATH)
+# if "model" not in st.session_state:
+#     st.session_state["model"] = load_model(MODEL_PATH)
+# model =  st.session_state["model"]
 
 # Configure MediaPipe
 mp_hands = mp.solutions.hands
@@ -82,25 +82,47 @@ def calculate_cosine_similarity(embedding1, embedding2):
     cosine_similarity = CosineSimilarity()
     return cosine_similarity(embedding1, embedding2).numpy()
 
-# Save reference embedding if not exists
-REFERENCE_EMBEDDING_PATH = "reference_embedding.npy"
+
 VIDEO_PATH = r"Color_video\164951232112037-CONGRATULATIONS.mp4"
+video_list = [
+    r"Color_video\164951232112037-CONGRATULATIONS.mp4",
+    r"Color_video\247040303650079-CHRISTMAS.mp4",
+    r"Color_video\95375935352444-GLOW.mp4"
+]
+embedding_dir = "reference_embedding"
+# for video_path in video_list:
+#   
+#     video_name = os.path.basename(video_path).split('.')[0]
+#     embedding_path = os.path.join(embedding_dir, f"{video_name}_embedding.npy")
 
-if not os.path.exists(REFERENCE_EMBEDDING_PATH):
-    cap = cv2.VideoCapture(VIDEO_PATH)
-    ref_landmarks = []
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        ref_landmarks.append(get_frame_landmarks(frame_rgb))
-    cap.release()
+#    
+#     if not os.path.exists(embedding_path):
+#         cap = cv2.VideoCapture(video_path)
+#         ref_landmarks = []
 
-    reference_embedding = extract_embedding(ref_landmarks)
-    np.save(REFERENCE_EMBEDDING_PATH, reference_embedding)
-else:
-    reference_embedding = np.load(REFERENCE_EMBEDDING_PATH)
+#       
+#         while cap.isOpened():
+#             ret, frame = cap.read()
+#             if not ret:
+#                 break
+#             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+#             # Gọi hàm lấy landmarks
+#             landmarks = get_frame_landmarks(frame_rgb)
+#             if landmarks is not None:
+#                 ref_landmarks.append(landmarks)
+
+#         cap.release()
+
+#        
+#         if ref_landmarks: 
+#             reference_embedding = extract_embedding(ref_landmarks)
+#             np.save(embedding_path, reference_embedding)  
+#             print(f"Embedding saved: {embedding_path}")
+#         else:
+#             print(f"No landmarks detected for video: {video_name}")
+#     else:
+#         print(f"Embedding already exists: {embedding_path}")
 
 
 st.set_page_config(page_title="Sign Language Learning", layout="wide")
@@ -111,13 +133,16 @@ if "match_detected" not in st.session_state:
 # Sidebar with Roadmap
 st.sidebar.title("Learning Roadmap")
 roadmap_videos = {
-    "Chapter 1": [VIDEO_PATH, VIDEO_PATH, VIDEO_PATH],
-    "Chapter 2": [VIDEO_PATH, VIDEO_PATH, VIDEO_PATH]
+    "Chapter 1": video_list[:2],  
+    "Chapter 2": video_list[2:],  
 }
 selected_chapter = st.sidebar.selectbox("Select a Chapter", list(roadmap_videos.keys()))
 selected_lesson = st.sidebar.selectbox("Select a Lesson", range(1, len(roadmap_videos[selected_chapter]) + 1))
 lesson_video_path = roadmap_videos[selected_chapter][selected_lesson - 1]
+video_name = os.path.basename(roadmap_videos[selected_chapter][selected_lesson - 1]).split('.')[0]  # Lấy tên file không có phần mở rộng
+embedding_path = os.path.join(embedding_dir, f"{video_name}_embedding.npy")
 
+reference_embedding = np.load(embedding_path)
 
 col1, col2 = st.columns(2)
 
