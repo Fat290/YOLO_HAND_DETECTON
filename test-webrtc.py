@@ -1,19 +1,19 @@
-import os
+import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 import cv2
 import numpy as np
 import mediapipe as mp
 from tensorflow.keras.models import load_model
 from tensorflow.keras.metrics import CosineSimilarity
-import streamlit as st
+import os
 
-# Đường dẫn mô hình và video
 MODEL_PATH = r'Color_model\color-embeded-acc.h5'
-VIDEO_PATH = r"Color_videos\18880274572777278-BRIGHT.mp4"  
 
-# Tải mô hình
-model = load_model(MODEL_PATH)
+if "model" not in st.session_state:
+    st.session_state["model"] = load_model(MODEL_PATH)
+model =  st.session_state["model"]
 
-# Cấu hình MediaPipe
+# Configure MediaPipe
 mp_hands = mp.solutions.hands
 mp_pose = mp.solutions.pose
 mp_face = mp.solutions.face_mesh
@@ -27,8 +27,12 @@ filtered_pose = [11, 12, 13, 14, 15, 16]
 filtered_face = [4, 6, 8, 9, 33, 37, 40, 46, 52, 55, 61, 70, 80, 82, 84, 87, 88, 91, 105, 107, 133, 145, 154, 157, 159, 161, 163, 263, 267, 270, 276, 282, 285, 291, 300, 310, 312, 314, 317, 318, 321, 334, 336, 362, 374, 381, 384, 386, 388, 390, 468, 473]
 HAND_NUM, POSE_NUM, FACE_NUM = len(filtered_hand), len(filtered_pose), len(filtered_face)
 
+# Threshold
+THRESHOLD = 0.8
+
+# Define functions
 def get_frame_landmarks(frame):
-    """Trích xuất landmarks từ một khung hình."""
+    """Extract landmarks from a frame."""
     all_landmarks = np.zeros((HAND_NUM * 2 + POSE_NUM + FACE_NUM, 3))
 
     def get_hands(frame):
@@ -58,9 +62,10 @@ def get_frame_landmarks(frame):
 
     return all_landmarks
 
-def extract_embedding(video_landmarks, model, target_shape=(60, 100, 3)):
-    """Tạo chuỗi embedding từ landmarks."""
+def extract_embedding(video_landmarks):
+    """Create an embedding from landmarks."""
     video_landmarks = np.array(video_landmarks)
+    target_shape = (60, 100, 3)
 
     if video_landmarks.shape[0] < target_shape[0]:
         padding = target_shape[0] - video_landmarks.shape[0]
@@ -73,76 +78,84 @@ def extract_embedding(video_landmarks, model, target_shape=(60, 100, 3)):
     return embedding
 
 def calculate_cosine_similarity(embedding1, embedding2):
-    """Tính toán độ tương đồng Cosine giữa hai vector embedding."""
+    """Calculate Cosine Similarity between two embeddings."""
     cosine_similarity = CosineSimilarity()
     return cosine_similarity(embedding1, embedding2).numpy()
 
-def get_video_embedding(video_path, model):
-    """Trích xuất landmarks từ video và tạo embedding."""
-    cap = cv2.VideoCapture(video_path)
-    all_landmarks = []
+# Save reference embedding if not exists
+REFERENCE_EMBEDDING_PATH = "reference_embedding.npy"
+VIDEO_PATH = r"Color_video\164951232112037-CONGRATULATIONS.mp4"
+
+if not os.path.exists(REFERENCE_EMBEDDING_PATH):
+    cap = cv2.VideoCapture(VIDEO_PATH)
+    ref_landmarks = []
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        landmarks = get_frame_landmarks(frame)
-        all_landmarks.append(landmarks)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        ref_landmarks.append(get_frame_landmarks(frame_rgb))
     cap.release()
-    return extract_embedding(all_landmarks, model)
+
+    reference_embedding = extract_embedding(ref_landmarks)
+    np.save(REFERENCE_EMBEDDING_PATH, reference_embedding)
+else:
+    reference_embedding = np.load(REFERENCE_EMBEDDING_PATH)
 
 
-st.title("Real-Time Video Matching")
+st.set_page_config(page_title="Sign Language Learning", layout="wide")
+
+if "match_detected" not in st.session_state:
+    st.session_state["match_detected"] = False
+
+# Sidebar with Roadmap
+st.sidebar.title("Learning Roadmap")
+roadmap_videos = {
+    "Chapter 1": [VIDEO_PATH, VIDEO_PATH, VIDEO_PATH],
+    "Chapter 2": [VIDEO_PATH, VIDEO_PATH, VIDEO_PATH]
+}
+selected_chapter = st.sidebar.selectbox("Select a Chapter", list(roadmap_videos.keys()))
+selected_lesson = st.sidebar.selectbox("Select a Lesson", range(1, len(roadmap_videos[selected_chapter]) + 1))
+lesson_video_path = roadmap_videos[selected_chapter][selected_lesson - 1]
 
 
-# Columns
 col1, col2 = st.columns(2)
 
 with col1:
-    st.header("Video Tham Chiếu")
-    ref_video = cv2.VideoCapture(VIDEO_PATH)
-    ref_landmarks = []
-
-    while ref_video.isOpened():
-        ret, frame = ref_video.read()
-        if not ret:
-            break
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        ref_landmarks.append(get_frame_landmarks(frame))
-        st.image(frame, channels="RGB", use_column_width=True)
-
-    ref_video.release()
-    reference_embedding = extract_embedding(ref_landmarks, model)
+    st.title("Example")
+    st.video(lesson_video_path)
 
 with col2:
-    st.header("Camera Realtime")
-    cap = cv2.VideoCapture(0)
+    st.title("Practice")
 
-    all_landmarks = []
-    frame_counter = 0
+    class SignLanguageTransformer(VideoTransformerBase):
+        def __init__(self):
+            self.reference_embedding = reference_embedding
+            self.user_landmarks = []
 
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+        def transform(self, frame):
+            img = frame.to_ndarray(format="bgr24")
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            landmarks = get_frame_landmarks(img_rgb)
+            self.user_landmarks.append(landmarks)
 
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        landmarks = get_frame_landmarks(frame_rgb)
-        all_landmarks.append(landmarks)
-        frame_counter += 1
+            if len(self.user_landmarks) > 60:  # Process 60 frames
+                user_embedding = extract_embedding(self.user_landmarks)
+                similarity = calculate_cosine_similarity(self.reference_embedding, user_embedding)
 
-        if frame_counter == 60:
-            current_embedding = extract_embedding(all_landmarks, model)
-            similarity = calculate_cosine_similarity(current_embedding, reference_embedding)
+                if similarity > THRESHOLD:
+                    cv2.putText(img, "Match!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    st.session_state["match_detected"] = True
+                else:
+                    cv2.putText(img, "Keep Practicing", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    st.session_state["match_detected"] = False
 
-            if similarity > THRESHOLD:
-                st.write(f"Similarity: {similarity:.2f} - Matched")
-            else:
-                st.write(f"Similarity: {similarity:.2f} - Not Matched")
+                self.user_landmarks = []  
 
-            frame_counter = 0
-            all_landmarks = []
+            return img
 
-        st.image(frame, channels="RGB", use_column_width=True)
+    webrtc_streamer(key="sign_language_practice", video_transformer_factory=SignLanguageTransformer)
 
-    cap.release()
+
+if st.session_state["match_detected"]:
+    st.success("Chúc mừng! Bạn đã thực hiện đúng cử chỉ!")
