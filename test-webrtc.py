@@ -157,6 +157,7 @@ with col2:
         def __init__(self):
             self.reference_embedding = reference_embedding
             self.user_landmarks = []
+            self.match_detected = False
 
         def transform(self, frame):
             img = frame.to_ndarray(format="bgr24")
@@ -164,22 +165,25 @@ with col2:
             landmarks = get_frame_landmarks(img_rgb)
             self.user_landmarks.append(landmarks)
 
-            if len(self.user_landmarks) > 60:  # Process 60 frames
+            if (len(self.user_landmarks)) > 60 and (self.match_detected is False):  # Process 60 frames
                 user_embedding = extract_embedding(self.user_landmarks)
                 similarity = calculate_cosine_similarity(self.reference_embedding, user_embedding)
 
                 if similarity > THRESHOLD:
-                    cv2.putText(img, "Match!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    st.session_state["match_detected"] = True
-                else:
-                    cv2.putText(img, "Keep Practicing", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                    st.session_state["match_detected"] = False
+                    self.match_detected = True
+
 
                 self.user_landmarks = []  
 
+            if self.match_detected:
+                cv2.putText(img, "Match!", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            else:
+                cv2.putText(img, "Keep Practicing", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
             return img
 
-    webrtc_streamer(key="sign_language_practice", video_transformer_factory=SignLanguageTransformer)
+
+    webrtc_streamer(key="sign_language_practice", video_processor_factory=SignLanguageTransformer)
 
 
 if st.session_state["match_detected"]:
